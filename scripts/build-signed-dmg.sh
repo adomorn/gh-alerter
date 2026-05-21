@@ -87,8 +87,8 @@ tell application "Finder"
   set arrangement of viewOptions to not arranged
   set icon size of viewOptions to 104
   set background picture of viewOptions to POSIX file "$DMG_MOUNT/.background/DmgBackground.png"
-  set position of item "$APP_NAME.app" of dmgFolder to {190, 245}
-  set position of item "Applications" of dmgFolder to {530, 245}
+  set position of item "$APP_NAME" of dmgFolder to {205, 250}
+  set position of item "Applications" of dmgFolder to {520, 250}
   update dmgFolder without registering applications
   delay 1
   close containerWindow

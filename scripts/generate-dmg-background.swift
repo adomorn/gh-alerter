@@ -23,8 +23,6 @@ func drawBackground(size: NSSize) {
     panel.lineWidth = 1
     panel.stroke()
 
-    drawText("GH Alerter", at: NSPoint(x: 48, y: 370), size: 30, weight: .semibold, color: .white)
-    drawText("Drag to Applications", at: NSPoint(x: 48, y: 336), size: 15, weight: .regular, color: NSColor(calibratedWhite: 0.80, alpha: 1))
     drawArrow(from: NSPoint(x: 286, y: 228), to: NSPoint(x: 436, y: 228))
 }
 

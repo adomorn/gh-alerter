@@ -3,20 +3,46 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="GHAlerter"
-VOLUME_NAME="GH Alerter"
+VOLUME_NAME="GH Alerter Installer"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 DMG_DIR="$DIST_DIR/dmg-staging"
 DMG_MOUNT="$DIST_DIR/dmg-mount"
+DMG_VERIFY_MOUNT="$DIST_DIR/dmg-verify-build"
 RW_DMG_PATH="$DIST_DIR/GHAlerter-rw.dmg"
 DMG_PATH="$DIST_DIR/GHAlerter-signed-notarized.dmg"
+EXPECTED_DMG_LAYOUT="205, 250, 520, 250"
 
 cleanup() {
   if hdiutil info | grep -Fq "$DMG_MOUNT"; then
     hdiutil detach "$DMG_MOUNT" -quiet || true
   fi
+  if hdiutil info | grep -Fq "$DMG_VERIFY_MOUNT"; then
+    hdiutil detach "$DMG_VERIFY_MOUNT" -quiet || true
+  fi
 }
 trap cleanup EXIT
+
+verify_dmg_layout() {
+  local mount_path="$1"
+  local positions
+  positions="$(osascript <<OSA
+tell application "Finder"
+  set dmgFolder to POSIX file "$mount_path" as alias
+  get {position of item "$APP_NAME" of dmgFolder, position of item "Applications" of dmgFolder}
+end tell
+OSA
+)"
+
+  if [[ "$positions" != "$EXPECTED_DMG_LAYOUT" ]]; then
+    cat >&2 <<EOF
+Unexpected DMG icon layout at $mount_path:
+  expected: $EXPECTED_DMG_LAYOUT
+  actual:   $positions
+EOF
+    exit 1
+  fi
+}
 
 if [[ -z "${DEVELOPER_ID_APPLICATION:-}" ]]; then
   cat >&2 <<'EOF'
@@ -59,8 +85,8 @@ spctl --assess --type execute --verbose=4 "$APP_DIR" || true
 xattr -cr "$APP_DIR" || true
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
-rm -rf "$DMG_DIR" "$DMG_MOUNT" "$RW_DMG_PATH" "$DMG_PATH"
-mkdir -p "$DMG_DIR" "$DMG_MOUNT"
+rm -rf "$DMG_DIR" "$DMG_MOUNT" "$DMG_VERIFY_MOUNT" "$RW_DMG_PATH" "$DMG_PATH"
+mkdir -p "$DMG_DIR" "$DMG_MOUNT" "$DMG_VERIFY_MOUNT"
 ditto --noextattr --noacl "$APP_DIR" "$DMG_DIR/$APP_NAME.app"
 xattr -cr "$DMG_DIR/$APP_NAME.app" || true
 codesign --verify --deep --strict --verbose=2 "$DMG_DIR/$APP_NAME.app"
@@ -100,6 +126,7 @@ tell application "Finder"
   close containerWindow
 end tell
 OSA
+verify_dmg_layout "$DMG_MOUNT"
 
 cp "$ROOT_DIR/Sources/GHAlerterApp/Resources/AppIcon.icns" "$DMG_MOUNT/.VolumeIcon.icns"
 SetFile -a C "$DMG_MOUNT"
@@ -156,5 +183,9 @@ fi
 xcrun stapler staple "$DMG_PATH"
 xcrun stapler validate "$DMG_PATH"
 spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_PATH"
+hdiutil verify "$DMG_PATH"
+hdiutil attach "$DMG_PATH" -mountpoint "$DMG_VERIFY_MOUNT" -nobrowse -quiet
+verify_dmg_layout "$DMG_VERIFY_MOUNT"
+hdiutil detach "$DMG_VERIFY_MOUNT" -quiet
 
 echo "Built $DMG_PATH"

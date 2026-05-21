@@ -85,6 +85,14 @@ final class NotificationServiceTests: XCTestCase {
         )
     }
 
+    func testForegroundPresentationPolicyShowsBannerListAndSound() {
+        let options = NotificationPresentationPolicy.foregroundOptions
+
+        XCTAssertTrue(options.contains(.banner))
+        XCTAssertTrue(options.contains(.list))
+        XCTAssertTrue(options.contains(.sound))
+    }
+
     func testNotifyPassesDefaultSoundRequestThroughInjectedCenter() async throws {
         let center = CapturingNotificationCenter()
         let service = NotificationService(center: center)
@@ -153,10 +161,12 @@ final class NotificationServiceTests: XCTestCase {
 
     func testNotifyImportsExistingCustomSoundBeforeSchedulingResolvedName() async throws {
         let center = CapturingNotificationCenter()
+        let soundPlayer = CapturingSoundPlayer()
         let soundsDirectory = testDirectSoundsDirectory()
         let service = NotificationService(
             center: center,
-            soundResolver: DefaultNotificationSoundResolver(soundsDirectory: soundsDirectory)
+            soundResolver: DefaultNotificationSoundResolver(soundsDirectory: soundsDirectory),
+            soundPlayer: soundPlayer
         )
         let sourceDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("gh-alerter-source-\(UUID().uuidString)")
@@ -175,9 +185,10 @@ final class NotificationServiceTests: XCTestCase {
         try await service.notify(event: sampleReviewRequestEvent(number: 14), soundPath: soundURL.path)
 
         let request = try XCTUnwrap(center.requests.single)
-        guard case .named(let resolvedSoundName) = request.sound else {
-            return XCTFail("Expected named custom sound")
-        }
+        XCTAssertEqual(request.sound, .none)
+        let playedURL = try XCTUnwrap(soundPlayer.playedURLs.single)
+        XCTAssertEqual(playedURL.deletingLastPathComponent().path, soundsDirectory.path)
+        let resolvedSoundName = playedURL.lastPathComponent
         XCTAssertNotEqual(resolvedSoundName, soundURL.lastPathComponent)
         XCTAssertTrue(resolvedSoundName.hasSuffix("-selected-sound.aiff"))
         XCTAssertEqual(
@@ -220,6 +231,14 @@ private final class CapturingNotificationCenter: NotificationScheduling {
         }
 
         requests.append(request)
+    }
+}
+
+private final class CapturingSoundPlayer: NotificationSoundPlaying {
+    private(set) var playedURLs: [URL] = []
+
+    func playSound(at url: URL) throws {
+        playedURLs.append(url)
     }
 }
 

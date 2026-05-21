@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import UserNotifications
 
 public struct NotificationDraft: Equatable {
@@ -33,12 +34,25 @@ public protocol NotificationScheduling {
     func add(_ request: NotificationScheduleRequest) async throws
 }
 
+public struct ResolvedNotificationSound: Equatable {
+    public let name: String
+    public let url: URL
+}
+
 public protocol NotificationSoundResolving {
-    func resolveSoundName(for soundPath: String?) throws -> String?
+    func resolveSound(for soundPath: String?) throws -> ResolvedNotificationSound?
+}
+
+public protocol NotificationSoundPlaying: AnyObject {
+    func playSound(at url: URL) throws
 }
 
 public enum NotificationServiceError: Error, Equatable {
     case soundFileMissing(path: String)
+}
+
+public enum NotificationPresentationPolicy {
+    public static let foregroundOptions: UNNotificationPresentationOptions = [.banner, .list, .sound]
 }
 
 public final class DefaultNotificationSoundResolver: NotificationSoundResolving {
@@ -57,7 +71,7 @@ public final class DefaultNotificationSoundResolver: NotificationSoundResolving 
         self.fileManager = fileManager
     }
 
-    public func resolveSoundName(for soundPath: String?) throws -> String? {
+    public func resolveSound(for soundPath: String?) throws -> ResolvedNotificationSound? {
         guard let soundPath else {
             return nil
         }
@@ -77,7 +91,7 @@ public final class DefaultNotificationSoundResolver: NotificationSoundResolving 
         }
 
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
-        return resolvedSoundName
+        return ResolvedNotificationSound(name: resolvedSoundName, url: destinationURL)
     }
 
     private static func stableHash(for value: String) -> String {
@@ -86,6 +100,28 @@ public final class DefaultNotificationSoundResolver: NotificationSoundResolving 
         }
 
         return String(hash, radix: 16)
+    }
+}
+
+public final class AVAudioNotificationSoundPlayer: NSObject, NotificationSoundPlaying, AVAudioPlayerDelegate {
+    private var players: [AVAudioPlayer] = []
+
+    public override init() {}
+
+    public func playSound(at url: URL) throws {
+        let player = try AVAudioPlayer(contentsOf: url)
+        players.append(player)
+        player.delegate = self
+        player.prepareToPlay()
+        player.play()
+    }
+
+    public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        players.removeAll { $0 === player }
+    }
+
+    public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        players.removeAll { $0 === player }
     }
 }
 
@@ -123,13 +159,16 @@ public final class UserNotificationCenterScheduler: NotificationScheduling {
 public final class NotificationService {
     private let center: any NotificationScheduling
     private let soundResolver: any NotificationSoundResolving
+    private let soundPlayer: any NotificationSoundPlaying
 
     public init(
         center: any NotificationScheduling = UserNotificationCenterScheduler(),
-        soundResolver: any NotificationSoundResolving = DefaultNotificationSoundResolver()
+        soundResolver: any NotificationSoundResolving = DefaultNotificationSoundResolver(),
+        soundPlayer: any NotificationSoundPlaying = AVAudioNotificationSoundPlayer()
     ) {
         self.center = center
         self.soundResolver = soundResolver
+        self.soundPlayer = soundPlayer
     }
 
     public static func notificationContent(for event: GitHubEvent, soundPath: String?) -> NotificationDraft {
@@ -176,14 +215,17 @@ public final class NotificationService {
 
         let draft = Self.notificationContent(for: event, soundPath: soundPath)
         let scheduleSound: NotificationScheduleSound
+        let resolvedSound: ResolvedNotificationSound?
         switch sound {
         case .silent:
+            resolvedSound = nil
             scheduleSound = .none
         case .systemDefault:
+            resolvedSound = nil
             scheduleSound = .default
         case .file:
-            let resolvedSoundName = try soundResolver.resolveSoundName(for: soundPath)
-            scheduleSound = resolvedSoundName.map(NotificationScheduleSound.named) ?? .default
+            resolvedSound = try soundResolver.resolveSound(for: soundPath)
+            scheduleSound = .none
         }
 
         let request = NotificationScheduleRequest(
@@ -194,5 +236,9 @@ public final class NotificationService {
             sound: scheduleSound
         )
         try await center.add(request)
+
+        if let resolvedSound {
+            try soundPlayer.playSound(at: resolvedSound.url)
+        }
     }
 }

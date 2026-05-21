@@ -40,9 +40,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         self.poller = poller
         UNUserNotificationCenter.current().delegate = self
         Task {
-            _ = try? await notificationService.requestPermission()
+            do {
+                let isAuthorized = try await notificationService.requestPermission()
+                guard isAuthorized else {
+                    await MainActor.run {
+                        inboxStore.apply(errorMessage: "Notifications are disabled for GH Alerter. Enable notifications in System Settings, then restart the app.")
+                    }
+                    return
+                }
+            } catch {
+                await MainActor.run {
+                    inboxStore.apply(errorMessage: "Notification permission could not be checked: \(error.localizedDescription)")
+                }
+                return
+            }
+
             await MainActor.run {
                 self.checkNow()
+                self.startPollingTimer(settingsStore: settingsStore)
             }
         }
 
@@ -58,7 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 NSApp.terminate(nil)
             }
         )
-        startPollingTimer(settingsStore: settingsStore)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -69,6 +83,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if notification.object as? NSWindow === settingsWindowController?.window {
             settingsWindowController = nil
         }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        NotificationPresentationPolicy.foregroundOptions
     }
 
     func userNotificationCenter(

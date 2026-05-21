@@ -44,6 +44,8 @@ fi
 "$ROOT_DIR/scripts/build-app.sh"
 swift "$ROOT_DIR/scripts/generate-dmg-background.swift"
 
+xattr -cr "$APP_DIR" || true
+
 codesign \
   --force \
   --deep \
@@ -54,10 +56,14 @@ codesign \
 
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 spctl --assess --type execute --verbose=4 "$APP_DIR" || true
+xattr -cr "$APP_DIR" || true
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 rm -rf "$DMG_DIR" "$DMG_MOUNT" "$RW_DMG_PATH" "$DMG_PATH"
 mkdir -p "$DMG_DIR" "$DMG_MOUNT"
-cp -R "$APP_DIR" "$DMG_DIR/"
+ditto --noextattr --noacl "$APP_DIR" "$DMG_DIR/$APP_NAME.app"
+xattr -cr "$DMG_DIR/$APP_NAME.app" || true
+codesign --verify --deep --strict --verbose=2 "$DMG_DIR/$APP_NAME.app"
 ln -s /Applications "$DMG_DIR/Applications"
 mkdir -p "$DMG_DIR/.background"
 cp "$ROOT_DIR/Sources/GHAlerterApp/Resources/DmgBackground.png" "$DMG_DIR/.background/DmgBackground.png"
@@ -106,6 +112,8 @@ if ! GetFileInfo -a "$DMG_MOUNT" | grep -q C; then
   echo "DMG custom volume icon attribute was not set." >&2
   exit 1
 fi
+xattr -cr "$DMG_MOUNT/$APP_NAME.app" || true
+codesign --verify --deep --strict --verbose=2 "$DMG_MOUNT/$APP_NAME.app"
 
 sync
 hdiutil detach "$DMG_MOUNT" -quiet

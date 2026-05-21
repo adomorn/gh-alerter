@@ -224,8 +224,9 @@ struct SettingsView: View {
             settings = try settingsStore.load()
             if let defaultSoundPath = firstPredefinedSoundPath() {
                 settings.selectDefaultSoundIfNeeded(path: defaultSoundPath)
-                try settingsStore.save(settings)
             }
+            settings.refreshBundledSoundPaths(currentBundlePathFor: bundledSoundPath(fileName:))
+            try settingsStore.save(settings)
             statusMessage = nil
         } catch {
             statusMessage = error.localizedDescription
@@ -321,13 +322,17 @@ struct SettingsView: View {
         return predefinedSoundURL(for: firstSound)?.path
     }
 
-    private func predefinedSoundURL(for sound: PredefinedNotificationSound) -> URL? {
-        let fileURL = URL(fileURLWithPath: sound.fileName)
+    private func bundledSoundPath(fileName: String) -> String? {
+        let fileURL = URL(fileURLWithPath: fileName)
         return Bundle.main.url(
             forResource: fileURL.deletingPathExtension().lastPathComponent,
             withExtension: fileURL.pathExtension,
             subdirectory: "Sounds"
-        )
+        )?.path
+    }
+
+    private func predefinedSoundURL(for sound: PredefinedNotificationSound) -> URL? {
+        bundledSoundPath(fileName: sound.fileName).map(URL.init(fileURLWithPath:))
     }
 
     private func checkGitHubCLIStatus() async {

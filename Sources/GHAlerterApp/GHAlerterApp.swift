@@ -41,6 +41,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         Task {
             _ = try? await notificationService.requestPermission()
+            await MainActor.run {
+                self.checkNow()
+            }
         }
 
         menuBarController = MenuBarController(
@@ -56,7 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         )
         startPollingTimer(settingsStore: settingsStore)
-        checkNow()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -111,19 +113,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         do {
             var settings = try settingsStore.load()
             settings.selectDefaultSoundIfNeeded(path: defaultSoundURL.path)
+            settings.refreshBundledSoundPaths(currentBundlePathFor: bundledSoundPath(fileName:))
             try settingsStore.save(settings)
         } catch {
             // Settings UI will surface persisted settings errors when the user opens it.
         }
     }
 
-    private func predefinedSoundURL(for sound: PredefinedNotificationSound) -> URL? {
-        let fileURL = URL(fileURLWithPath: sound.fileName)
+    private func bundledSoundPath(fileName: String) -> String? {
+        let fileURL = URL(fileURLWithPath: fileName)
         return Bundle.main.url(
             forResource: fileURL.deletingPathExtension().lastPathComponent,
             withExtension: fileURL.pathExtension,
             subdirectory: "Sounds"
-        )
+        )?.path
+    }
+
+    private func predefinedSoundURL(for sound: PredefinedNotificationSound) -> URL? {
+        bundledSoundPath(fileName: sound.fileName).map(URL.init(fileURLWithPath:))
     }
 
     private func checkNow() {

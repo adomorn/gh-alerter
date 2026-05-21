@@ -40,6 +40,38 @@ public struct AppSettings: Equatable, Codable {
         }
     }
 
+    public mutating func refreshBundledSoundPaths(currentBundlePathFor fileName: (String) -> String?) {
+        if reviewRequestSoundEnabled {
+            reviewRequestSoundPath = refreshedBundledSoundPath(
+                currentPath: reviewRequestSoundPath,
+                currentBundlePathFor: fileName
+            )
+        }
+
+        if approvalSoundEnabled {
+            approvalSoundPath = refreshedBundledSoundPath(
+                currentPath: approvalSoundPath,
+                currentBundlePathFor: fileName
+            )
+        }
+    }
+
+    private func refreshedBundledSoundPath(
+        currentPath: String?,
+        currentBundlePathFor currentBundlePath: (String) -> String?
+    ) -> String? {
+        guard let currentPath else {
+            return nil
+        }
+
+        let fileName = URL(fileURLWithPath: currentPath).lastPathComponent
+        guard PredefinedNotificationSound.all.contains(where: { $0.fileName == fileName }) else {
+            return currentPath
+        }
+
+        return currentBundlePath(fileName) ?? currentPath
+    }
+
     private enum CodingKeys: String, CodingKey {
         case watchedScopeRawValues
         case pollingIntervalSeconds

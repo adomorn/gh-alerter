@@ -90,4 +90,39 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.reviewRequestSoundPath, "/custom/review.wav")
         XCTAssertNil(settings.approvalSoundPath)
     }
+
+    func testBundledSoundPathsAreMovedToCurrentBundlePath() {
+        var settings = AppSettings(
+            reviewRequestSoundPath: "/old/GHAlerter.app/Contents/Resources/Sounds/pulse.wav",
+            approvalSoundPath: "/old/GHAlerter.app/Contents/Resources/Sounds/ping.wav"
+        )
+
+        settings.refreshBundledSoundPaths { fileName in
+            "/Applications/GHAlerter.app/Contents/Resources/Sounds/\(fileName)"
+        }
+
+        XCTAssertEqual(
+            settings.reviewRequestSoundPath,
+            "/Applications/GHAlerter.app/Contents/Resources/Sounds/pulse.wav"
+        )
+        XCTAssertEqual(
+            settings.approvalSoundPath,
+            "/Applications/GHAlerter.app/Contents/Resources/Sounds/ping.wav"
+        )
+    }
+
+    func testBundledSoundPathRefreshDoesNotTouchCustomOrDisabledSounds() {
+        var settings = AppSettings(
+            reviewRequestSoundPath: "/Users/test/custom.wav",
+            approvalSoundPath: "/old/GHAlerter.app/Contents/Resources/Sounds/ping.wav",
+            approvalSoundEnabled: false
+        )
+
+        settings.refreshBundledSoundPaths { fileName in
+            "/Applications/GHAlerter.app/Contents/Resources/Sounds/\(fileName)"
+        }
+
+        XCTAssertEqual(settings.reviewRequestSoundPath, "/Users/test/custom.wav")
+        XCTAssertEqual(settings.approvalSoundPath, "/old/GHAlerter.app/Contents/Resources/Sounds/ping.wav")
+    }
 }
